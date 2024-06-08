@@ -58,8 +58,8 @@ app.post('/users/signup', async (req, res) => {
 
     const salt = await bcrypt.genSalt()
     const hasedPassword = await bcrypt.hash(password,salt)
-    console.log("Request Body:", req.body);
-    console.log(salt +"|||"+ hasedPassword);
+    // console.log("Request Body:", req.body);
+    // console.log(salt +"|||"+ hasedPassword);
 
 
     if (!email) {
