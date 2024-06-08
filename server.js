@@ -74,6 +74,13 @@ app.post('/users/signup', async (req, res) => {
       return res.status(400).send({ error: 'age kosong' });
     }
 
+    const usersRef = db.collection(dbname);
+    const snapshot = await usersRef.where("email", "==", email).get();
+
+    if (!snapshot.empty) {
+      return res.status(400).send({ error: 'Email already exists' });
+    }
+    
     const userJson = {
       email,
       firstName,
