@@ -17,3 +17,5 @@
 node_modules/
 
 request.rest
+
+static/Story API Documentation.html

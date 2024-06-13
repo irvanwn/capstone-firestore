@@ -1,23 +1,20 @@
 const express = require("express");
 const app = express();
-const bcrypt = require("bcrypt")
+const bcrypt = require("bcrypt");
 const admin = require("firebase-admin");
 require('dotenv').config();
 const credentials = require(process.env.FIREBASE_CREDENTIALS_PATH);
 
-const dbname = "dbusers"
-const loginAttempt = 0;
+const dbname = "dbusers";
 
 admin.initializeApp({
-  credential: admin.credential.cert(credentials) 
+  credential: admin.credential.cert(credentials)
 });
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const db = admin.firestore();
-
-const userJson = {}
 
 app.get('/users', async (req, res) => {
   try {
@@ -26,52 +23,48 @@ app.get('/users', async (req, res) => {
     const users = [];
 
     snapshot.forEach(doc => {
-      users.push({ id: doc.id, ...doc.data() });
+      users.push({ email: doc.id, ...doc.data() });
     });
 
     res.status(200).json(users);
   } catch (error) {
     res.status(500).send(error.message);
   }
-}); 
+});
 
-app.get('/users/:id', async (req, res) => {
+app.get('/user/:email', async (req, res) => {
   try {
-    const userId = req.params.id;
-    const userRef = db.collection(dbname).doc(userId);
+    const userEmail = req.params.email;
+    const userRef = db.collection(dbname).doc(userEmail);
     const userDoc = await userRef.get();
 
     if (!userDoc.exists) {
       return res.status(404).send("User not found");
     }
 
-    res.status(200).json({ id: userDoc.id, ...userDoc.data() });
+    res.status(200).json({ email: userDoc.id, ...userDoc.data() });
   } catch (error) {
     res.status(500).send(error.message);
   }
 });
 
-app.post('/users/signup', async (req, res) => {
+app.post('/user/signup', async (req, res) => {
   try {
-
     const { email, firstName, lastName, password, age } = req.body;
 
-    const salt = await bcrypt.genSalt()
-    const hasedPassword = await bcrypt.hash(password,salt)
-    // console.log("Request Body:", req.body);
-    // console.log(salt +"|||"+ hasedPassword);
-
+    const salt = await bcrypt.genSalt();
+    const hashedPassword = await bcrypt.hash(password, salt);
 
     if (!email) {
-      return res.status(400).send({ error: 'email Kosong' });
-    } else if(!firstName){
-      return res.status(400).send({ error: 'firstname Kosong' });
-    } else if(!lastName){
-      return res.status(400).send({ error: 'lastname Kosong' });
-    } else if(!password){
-      return res.status(400).send({ error: 'password kosong' });
-    } else if(!age) {
-      return res.status(400).send({ error: 'age kosong' });
+      return res.status(400).send({ error: 'Email is required' });
+    } else if (!firstName) {
+      return res.status(400).send({ error: 'First name is required' });
+    } else if (!lastName) {
+      return res.status(400).send({ error: 'Last name is required' });
+    } else if (!password) {
+      return res.status(400).send({ error: 'Password is required' });
+    } else if (!age) {
+      return res.status(400).send({ error: 'Age is required' });
     }
 
     const usersRef = db.collection(dbname);
@@ -80,131 +73,110 @@ app.post('/users/signup', async (req, res) => {
     if (!snapshot.empty) {
       return res.status(400).send({ error: 'Email already exists' });
     }
-    
+
+    const newUserRef = usersRef.doc(); 
+    const uniqueToken = newUserRef.id; 
+    const userDocRef = usersRef.doc(email);
+
     const userJson = {
+      Token: uniqueToken,
       email,
       firstName,
       lastName,
-      salt : salt,
-      password : hasedPassword,
+      salt,
+      password: hashedPassword,
       age: parseInt(age),
-      loginAttempt : 0
+      loginAttempt: 0
     };
 
-    const response = await db.collection(dbname).add(userJson); 
-      // res.send(response);
-      res.status(201).send({ error: false, message: 'User created' });
-    } catch(error) {
-      res.status(500).send(error);
-    }
-  });
-  
-  app.post("/users/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-  
-      if (!email || !password) {
-        return res.status(400).send("Email and password are required");
-      }
-  
-      const usersRef = db.collection(dbname);
-      const snapshot = await usersRef.where("email", "==", email).get();
-  
-      if (snapshot.empty) {
-        return res.status(400).send("email doesnt exist");
-      }
-  
-      const userDoc = snapshot.docs[0];
-      const user = userDoc.data();
-      const userRef = userDoc.ref;
-  
+    await userDocRef.set(userJson);
+    res.status(201).send({ error: false, message: 'User created' });
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
 
-      if (user.loginAttempt >= 50) {
-        return res.status(429).send("Too many login attempts. Please try again later.");
-      }
-  
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-  
-      if (!isPasswordValid) {
-        await userRef.update({ loginAttempt: (user.loginAttempt || 0) + 1 });
-        return res.status(400).send("Invalid password");
-      }
-  
-      await userRef.update({ loginAttempt: 0 });
-  
-      // res.status(200).send("Login successful, welcome " + user.firstName);
-      res.status(200).send({ error: false, message: 'success', loginResult: {
-        userId: user.id ,
+
+
+app.post("/user/login", async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).send("Email and password are required");
+    }
+
+    const userRef = db.collection(dbname).doc(email);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(400).send("Email doesn't exist");
+    }
+
+    const user = userDoc.data();
+
+    if (user.loginAttempt >= 50) {
+      return res.status(429).send("Too many login attempts. Please try again later.");
+    }
+
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+
+    if (!isPasswordValid) {
+      await userRef.update({ loginAttempt: (user.loginAttempt || 0) + 1 });
+      return res.status(400).send("Invalid password");
+    }
+
+    await userRef.update({ loginAttempt: 0 });
+
+    res.status(200).send({
+      error: false,
+      message: 'Login successful',
+      loginResult: {
+        userId: user.id,
         firstName: user.firstName,
-        lastName:  user.lastName,
-        age:user.age
+        lastName: user.lastName,
+        age: user.age
+      }
+    });
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
 
-    } });
-    } catch (error) {
-      res.status(500).send(error.message);
-    }
-  });
-  
-  app.put('/users/update/:id', async (req, res) => {
-    try {
-      const userId = req.params.id;
-      const { email, firstName, lastName, password, age } = req.body;
-  
-      const userRef = db.collection(dbname).doc(userId);
-      const userDoc = await userRef.get();
-  
-      if (!userDoc.exists) {
-        return res.status(404).send("User not found");
-      }
-  
-      const user = userDoc.data();
-  
-      const updatedUser = {
-        email: email || user.email,
-        firstName: firstName || user.firstName,
-        lastName: lastName || user.lastName,
-        age: age || user.age,
-      };
-  
-      if (password) {
-        const salt = await bcrypt.genSalt();
-        const hashedPassword = await bcrypt.hash(password, salt);
-        updatedUser.password = hashedPassword;
-        updatedUser.salt = salt;
-      }
-  
-      await userRef.update(updatedUser);
-  
-      res.status(200).send("User updated successfully");
-    } catch (error) {
-      res.status(500).send(error.message);
-    }
-  });
+app.put('/user/update/:email', async (req, res) => {
+  try {
+    const userEmail = req.params.email;
+    const { firstName, lastName, password, age } = req.body;
 
-  app.get('/users/email/:email', async (req, res) => {
-    try {
-      const email = req.params.email;
-      
-      if (!email) {
-        return res.status(400).send({ error: 'Email parameter is required' });
-      }
-  
-      const usersRef = db.collection(dbname);
-      const snapshot = await usersRef.where("email", "==", email).get();
-  
-      if (snapshot.empty) {
-        return res.status(404).send("User not found");
-      }
-  
-      const userDoc = snapshot.docs[0];
-      const user = { id: userDoc.id, ...userDoc.data() };
-  
-      res.status(200).json(user);
-    } catch (error) {
-      res.status(500).send(error.message);
+    const userRef = db.collection(dbname).doc(userEmail);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).send("User not found");
     }
-  });
-  
+
+    const user = userDoc.data();
+
+    const updatedUser = {
+      firstName: firstName || user.firstName,
+      lastName: lastName || user.lastName,
+      age: age || user.age,
+    };
+
+    if (password) {
+      const salt = await bcrypt.genSalt();
+      const hashedPassword = await bcrypt.hash(password, salt);
+      updatedUser.password = hashedPassword;
+      updatedUser.salt = salt;
+    }
+
+    await userRef.update(updatedUser);
+
+    res.status(200).send("User updated successfully");
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
