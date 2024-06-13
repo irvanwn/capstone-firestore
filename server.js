@@ -92,7 +92,8 @@ app.post('/users/signup', async (req, res) => {
     };
 
     const response = await db.collection(dbname).add(userJson); 
-      res.send(response);
+      // res.send(response);
+      res.status(201).send({ error: false, message: 'User created' });
     } catch(error) {
       res.status(500).send(error);
     }
@@ -110,7 +111,7 @@ app.post('/users/signup', async (req, res) => {
       const snapshot = await usersRef.where("email", "==", email).get();
   
       if (snapshot.empty) {
-        return res.status(400).send("Invalid email or password");
+        return res.status(400).send("email doesnt exist");
       }
   
       const userDoc = snapshot.docs[0];
@@ -126,12 +127,19 @@ app.post('/users/signup', async (req, res) => {
   
       if (!isPasswordValid) {
         await userRef.update({ loginAttempt: (user.loginAttempt || 0) + 1 });
-        return res.status(400).send("Invalid email or password");
+        return res.status(400).send("Invalid password");
       }
   
       await userRef.update({ loginAttempt: 0 });
   
-      res.status(200).send("Login successful, welcome " + user.firstName);
+      // res.status(200).send("Login successful, welcome " + user.firstName);
+      res.status(200).send({ error: false, message: 'success', loginResult: {
+        userId: user.id ,
+        firstName: user.firstName,
+        lastName:  user.lastName,
+        age:user.age
+
+    } });
     } catch (error) {
       res.status(500).send(error.message);
     }
@@ -173,6 +181,30 @@ app.post('/users/signup', async (req, res) => {
     }
   });
 
+  app.get('/users/email/:email', async (req, res) => {
+    try {
+      const email = req.params.email;
+      
+      if (!email) {
+        return res.status(400).send({ error: 'Email parameter is required' });
+      }
+  
+      const usersRef = db.collection(dbname);
+      const snapshot = await usersRef.where("email", "==", email).get();
+  
+      if (snapshot.empty) {
+        return res.status(404).send("User not found");
+      }
+  
+      const userDoc = snapshot.docs[0];
+      const user = { id: userDoc.id, ...userDoc.data() };
+  
+      res.status(200).json(user);
+    } catch (error) {
+      res.status(500).send(error.message);
+    }
+  });
+  
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
