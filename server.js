@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const bcrypt = require("bcrypt");
 const admin = require("firebase-admin");
+const { v4: uuidv4 } = require('uuid')
 require('dotenv').config();
 const credentials = require(process.env.FIREBASE_CREDENTIALS_PATH);
 
@@ -15,6 +16,39 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 const db = admin.firestore();
+
+
+function validateToken(req, res, next) {
+  const authorizationHeader = req.headers.authorization;
+
+  if (!authorizationHeader) {
+    return res.status(401).send("Access denied. Bearer token is required.");
+  }
+
+  let token;
+  if (authorizationHeader.startsWith('Bearer ')) {
+    token = authorizationHeader.split(' ')[1]; // Extract the token after "Bearer "
+  } else {
+    token = authorizationHeader; // This assumes the token is directly provided without "Bearer "
+  }
+  // Check if token exists and is valid
+  // Here, we assume Token is stored in Firestore
+  db.collection(dbname)
+    .where("Token", "==", token)
+    .get()
+    .then((snapshot) => {
+      if (snapshot.empty) {
+        return res.status(401).send("Invalid token.");
+      }
+      // Token is valid, proceed to next middleware or route handler
+      next();
+    })
+    .catch((err) => {
+      console.error("Error validating token:", err);
+      res.status(500).send("Internal server error");
+    });
+}
+
 
 app.get('/users', async (req, res) => {
   try {
@@ -48,36 +82,31 @@ app.get('/user/:email', async (req, res) => {
   }
 });
 
+
 app.post('/user/signup', async (req, res) => {
   try {
     const { email, firstName, lastName, password, age } = req.body;
 
+    // Hash the password
     const salt = await bcrypt.genSalt();
     const hashedPassword = await bcrypt.hash(password, salt);
 
-    if (!email) {
-      return res.status(400).send({ error: 'Email is required' });
-    } else if (!firstName) {
-      return res.status(400).send({ error: 'First name is required' });
-    } else if (!lastName) {
-      return res.status(400).send({ error: 'Last name is required' });
-    } else if (!password) {
-      return res.status(400).send({ error: 'Password is required' });
-    } else if (!age) {
-      return res.status(400).send({ error: 'Age is required' });
+    // Validate required fields
+    if (!email || !firstName || !lastName || !password || !age) {
+      return res.status(400).send({ error: 'All fields are required' });
     }
 
-    const usersRef = db.collection(dbname);
-    const snapshot = await usersRef.where("email", "==", email).get();
-
-    if (!snapshot.empty) {
+    // Check if email already exists
+    const userRef = db.collection(dbname).doc(email);
+    const userDoc = await userRef.get();
+    if (userDoc.exists) {
       return res.status(400).send({ error: 'Email already exists' });
     }
 
-    const newUserRef = usersRef.doc(); 
-    const uniqueToken = newUserRef.id; 
-    const userDocRef = usersRef.doc(email);
+    // Generate a unique token (example using UUID)
+    const uniqueToken = uuidv4(); // Generate UUID
 
+    // Store user data including the hashed password and token
     const userJson = {
       Token: uniqueToken,
       email,
@@ -89,13 +118,12 @@ app.post('/user/signup', async (req, res) => {
       loginAttempt: 0
     };
 
-    await userDocRef.set(userJson);
+    await userRef.set(userJson);
     res.status(201).send({ error: false, message: 'User created' });
   } catch (error) {
     res.status(500).send(error.message);
   }
 });
-
 
 
 app.post("/user/login", async (req, res) => {
@@ -144,7 +172,7 @@ app.post("/user/login", async (req, res) => {
   }
 });
 
-app.put('/user/update/:email', async (req, res) => {
+app.put('/user/update/:email', validateToken ,async (req, res) => {
   try {
     const userEmail = req.params.email;
     const { firstName, lastName, password, age } = req.body;
@@ -179,7 +207,7 @@ app.put('/user/update/:email', async (req, res) => {
   }
 });
 
-app.delete('/user/delete/:email', async (req, res) => {
+app.delete('/user/delete/:email', validateToken , async (req, res) => {
   try {
     const userEmail = req.params.email;
     const userRef = db.collection(dbname).doc(userEmail);
