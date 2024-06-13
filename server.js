@@ -135,7 +135,8 @@ app.post("/user/login", async (req, res) => {
         userId: user.id,
         firstName: user.firstName,
         lastName: user.lastName,
-        age: user.age
+        age: user.age,
+        Token: user.Token
       }
     });
   } catch (error) {
@@ -177,6 +178,25 @@ app.put('/user/update/:email', async (req, res) => {
     res.status(500).send(error.message);
   }
 });
+
+app.delete('/user/delete/:email', async (req, res) => {
+  try {
+    const userEmail = req.params.email;
+    const userRef = db.collection(dbname).doc(userEmail);
+    const userDoc = await userRef.get();
+
+    if (!userDoc.exists) {
+      return res.status(404).send("User not found");
+    }
+
+    await userRef.delete();
+
+    res.status(200).send("User "+ userEmail +" deleted successfully");
+  } catch (error) {
+    res.status(500).send(error.message);
+  }
+});
+
 
 const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
